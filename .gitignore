@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*_venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code local session state
+.claude/
+
+# Large or regenerable ML artifacts - never commit these regardless of branch
+# (huge, and easily rebuilt from the scripts + Qualcomm AI Hub)
+qai_hub_venv/
+bench_models/
+resnet50_export/
+resnet50_b1_export/
+resnet50_b4_export/
+yolov11_export/
+*.zip
+yolo11n.pt
+yolov8n.pt
+
+# Raw training photos - large personal dataset, not needed to reproduce the
+# pipeline structure. Regenerate with wire_finetune/convert_and_organize.py
+# from the original export zips (kept locally, not in git).
+wire_finetune/dataset/
+wire_finetune/raw_heic/
+
+# Robot app: the .tflite model must be copied in manually before deploying
+# (see README) because the App Lab container only bind-mounts its own app
+# folder, not the rest of the device filesystem.
+robot_app/wire-inspector-robot/python/models/
+robot_app/wire-inspector-robot/.cache/
+robot_app/wire-inspector-robot/inspection_log/
+
+# Local-only helper with a hardcoded device password - never commit
+setup_ssh_key.py
