@@ -49,7 +49,10 @@ from arduino.app_utils import App, Bridge
 # paths must live under here (not the host's /home/arduino/wire_classifier).
 APP_ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = str(APP_ROOT / "python" / "models" / "wire_classifier_quantized.tflite")
-CAMERA_INDEX = 2  # Logitech HD Webcam C615 -> /dev/video2
+# /dev/videoN indices for the USB webcam shift across reboots (the SoC's own
+# hardware video codec devices share the same /dev/video* numbering), so we
+# open it via the udev by-id symlink instead, which is stable per USB device.
+CAMERA_BY_ID_GLOB = "usb-046d_HD_Webcam_C615_*-video-index0"
 PORT = 8080
 LOG_DIR = APP_ROOT / "inspection_log"
 
@@ -83,9 +86,28 @@ inp_details = interp.get_input_details()[0]
 out_details = interp.get_output_details()[0]
 INPUT_DTYPE = inp_details['dtype']
 
-cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_V4L2)
-if not cap.isOpened():
-    raise RuntimeError(f"Khong mo duoc camera index {CAMERA_INDEX}")
+def open_camera():
+    by_id_dir = Path("/dev/v4l/by-id")
+    if by_id_dir.is_dir():
+        for entry in sorted(by_id_dir.glob(CAMERA_BY_ID_GLOB)):
+            c = cv2.VideoCapture(str(entry), cv2.CAP_V4L2)
+            if c.isOpened():
+                return c
+            c.release()
+    # fallback: scan raw indices for anything that opens and actually reads a frame
+    for idx in range(10):
+        c = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+        if c.isOpened():
+            ok, _ = c.read()
+            if ok:
+                return c
+        c.release()
+    return None
+
+
+cap = open_camera()
+if cap is None:
+    raise RuntimeError("Khong tim thay camera nao kha dung (by-id lan fallback index deu that bai)")
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
