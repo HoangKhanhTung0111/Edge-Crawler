@@ -336,6 +336,18 @@ def safe_stop():
         print(f"[safe_stop] {type(error).__name__}: {error}")
 
 
+def distance_monitor_loop():
+    """Verification/debug: log HC-SR04 readings every second. Decoupled from
+    the drive loop for now - not yet used for obstacle avoidance."""
+    while True:
+        try:
+            dist = Bridge.call("get_distance_cm")
+            print(f"[distance] {dist:.1f} cm" if dist >= 0 else "[distance] out of range / no echo")
+        except Exception as error:
+            print(f"[distance] {type(error).__name__}: {error}")
+        time.sleep(1.0)
+
+
 # ---------------------------------------------------------------- monitor ---
 flask_app = Flask(__name__)
 
@@ -392,6 +404,7 @@ def run_flask():
 threading.Thread(target=capture_loop, daemon=True).start()
 threading.Thread(target=inference_loop, daemon=True).start()
 threading.Thread(target=run_flask, daemon=True).start()
+threading.Thread(target=distance_monitor_loop, daemon=True).start()
 
 print(f"Monitor: http://172.16.3.88:{PORT}")
 

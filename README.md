@@ -100,6 +100,21 @@ python/requirements.txt   Flask, ai-edge-litert (numpy/opencv come from the
 The sketch fails safe: motors are held stopped at boot until Python
 explicitly commands motion.
 
+### Hardware: HC-SR04 ultrasonic sensor wiring
+
+| Signal | Pin |
+|---|---|
+| VCC | 3.3V (**not** 5V - the UNO Q's GPIO is 3.3V logic and isn't confirmed 5V-tolerant; feeding 5V back into a pin risks damaging the board) |
+| GND | GND |
+| Trig | 3 |
+| Echo | 2 |
+
+`get_distance_cm()` returns the measured distance in cm, or `-1.0` if nothing
+was in range (or the reading looked physically implausible - e.g. shorter
+than the sensor's ~2cm minimum range, which is filtered out as electrical
+noise rather than a real echo). Not yet wired into the drive loop's decision
+making; currently only logged for verification via `distance_monitor_loop()`.
+
 ### Deploying to the device
 
 The App Lab container only bind-mounts the app's own folder, so the model
