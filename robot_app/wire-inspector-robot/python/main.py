@@ -77,6 +77,19 @@ SCAN_SETTLE_S = 0.25          # wait after each pivot for a fresh classified fra
 SCAN_MAX_STEPS = 8
 SCAN_TARGET_CONF = 0.97
 
+# Set True to run camera + sensors + full decision logic with the motors
+# kept completely silent - useful for bench-testing detection without the
+# car actually driving off.
+TESTING_MOTORS_DISABLED = False
+
+# Single forward-facing sensor - no way to tell which side has more room, so
+# obstacles are always avoided by turning the same fixed direction.
+OBSTACLE_THRESHOLD_CM = 15.0   # trigger avoidance when something is closer than this
+OBSTACLE_CONSEC_REQUIRED = 2  # consecutive close readings before triggering (debounce)
+AVOID_DIRECTION = MOTION_PIVOT_RIGHT
+AVOID_TURN_MS = 400           # pivot burst duration per avoidance step
+AVOID_MAX_STEPS = 6           # give up turning after this many steps (don't spin forever)
+
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # ------------------------------------------------------------ AI + camera ---
@@ -224,10 +237,16 @@ def classify_latest(min_wait=0.0):
 
 
 # ------------------------------------------------------------ robot logic ---
-def pivot_burst(mode, ms):
+def send_motion(mode):
+    if TESTING_MOTORS_DISABLED:
+        return
     Bridge.call("set_motion", mode)
+
+
+def pivot_burst(mode, ms):
+    send_motion(mode)
     time.sleep(ms / 1000.0)
-    Bridge.call("set_motion", MOTION_STOP)
+    send_motion(MOTION_STOP)
 
 
 def center_on_defect(initial_conf):
@@ -264,7 +283,7 @@ def center_on_defect(initial_conf):
 
 def inspect_broken_wire(trigger_conf):
     robot_state["mode"] = "STOPPED - INSPECTING"
-    Bridge.call("set_motion", MOTION_STOP)
+    send_motion(MOTION_STOP)
     time.sleep(0.2)
 
     net_pivot_ms, best_conf = center_on_defect(trigger_conf)
@@ -292,27 +311,75 @@ def inspect_broken_wire(trigger_conf):
         pivot_burst(undo_dir, undo_ms)
 
     robot_state["mode"] = "DRIVING"
-    Bridge.call("set_motion", MOTION_FORWARD)
+    send_motion(MOTION_FORWARD)
+
+
+def get_distance_cm():
+    try:
+        return Bridge.call("get_distance_cm")
+    except Exception as error:
+        print(f"[distance] {type(error).__name__}: {error}")
+        return -1.0
+
+
+def avoid_obstacle(trigger_dist):
+    """Something is too close ahead - stop, turn away (fixed direction, since
+    a single forward-facing sensor can't tell which side has more room) until
+    the path reads clear again or we give up turning, then resume."""
+    print(f"[avoid] obstacle at {trigger_dist:.1f} cm, turning")
+    robot_state["mode"] = "AVOIDING OBSTACLE"
+    send_motion(MOTION_STOP)
+    time.sleep(0.1)
+
+    steps = 0
+    dist = trigger_dist
+    for steps in range(1, AVOID_MAX_STEPS + 1):
+        pivot_burst(AVOID_DIRECTION, AVOID_TURN_MS)
+        time.sleep(0.1)
+        dist = get_distance_cm()
+        if dist < 0 or dist >= OBSTACLE_THRESHOLD_CM:
+            break
+
+    print(f"[avoid] done after {steps} step(s), distance now {dist:.1f} cm")
+    robot_state["mode"] = "DRIVING"
+    send_motion(MOTION_FORWARD)
 
 
 _consec_broken = 0
+_consec_close = 0
 _cooldown_until = 0.0
 _driving_started = False
+_last_heartbeat = 0.0
 
 
 def control_tick():
-    """Called repeatedly by App.run(); one tick of the drive/detect/inspect
-    state machine."""
-    global _consec_broken, _cooldown_until, _driving_started
+    """Called repeatedly by App.run(); one tick of the drive/detect/inspect/
+    avoid state machine. Obstacle avoidance takes priority over wire
+    inspection since it's about not colliding with something."""
+    global _consec_broken, _consec_close, _cooldown_until, _driving_started
 
     if not _driving_started:
-        Bridge.call("set_motion", MOTION_FORWARD)
-        robot_state["mode"] = "DRIVING"
+        send_motion(MOTION_FORWARD)
+        robot_state["mode"] = "TEST MODE (motors off)" if TESTING_MOTORS_DISABLED else "DRIVING"
         _driving_started = True
 
     now = time.time()
     if now < _cooldown_until:
         time.sleep(0.1)
+        return
+
+    dist = get_distance_cm()
+    global _last_heartbeat
+    if now - _last_heartbeat >= 1.0:
+        print(f"[tick] distance={dist:.1f}cm" if dist >= 0 else "[tick] distance=out-of-range")
+        _last_heartbeat = now
+    is_close = 0 <= dist < OBSTACLE_THRESHOLD_CM
+    _consec_close = _consec_close + 1 if is_close else 0
+
+    if _consec_close >= OBSTACLE_CONSEC_REQUIRED:
+        _consec_close = 0
+        avoid_obstacle(dist)
+        _cooldown_until = time.time() + COOLDOWN_SEC
         return
 
     with state_lock:
@@ -334,18 +401,6 @@ def safe_stop():
         Bridge.call("set_motion", MOTION_STOP)
     except Exception as error:
         print(f"[safe_stop] {type(error).__name__}: {error}")
-
-
-def distance_monitor_loop():
-    """Verification/debug: log HC-SR04 readings every second. Decoupled from
-    the drive loop for now - not yet used for obstacle avoidance."""
-    while True:
-        try:
-            dist = Bridge.call("get_distance_cm")
-            print(f"[distance] {dist:.1f} cm" if dist >= 0 else "[distance] out of range / no echo")
-        except Exception as error:
-            print(f"[distance] {type(error).__name__}: {error}")
-        time.sleep(1.0)
 
 
 # ---------------------------------------------------------------- monitor ---
@@ -404,7 +459,6 @@ def run_flask():
 threading.Thread(target=capture_loop, daemon=True).start()
 threading.Thread(target=inference_loop, daemon=True).start()
 threading.Thread(target=run_flask, daemon=True).start()
-threading.Thread(target=distance_monitor_loop, daemon=True).start()
 
 print(f"Monitor: http://172.16.3.88:{PORT}")
 

@@ -112,8 +112,16 @@ explicitly commands motion.
 `get_distance_cm()` returns the measured distance in cm, or `-1.0` if nothing
 was in range (or the reading looked physically implausible - e.g. shorter
 than the sensor's ~2cm minimum range, which is filtered out as electrical
-noise rather than a real echo). Not yet wired into the drive loop's decision
-making; currently only logged for verification via `distance_monitor_loop()`.
+noise rather than a real echo).
+
+Wired into the drive loop with the same priority as wire inspection, but
+obstacle avoidance is checked first each tick since it's about not
+colliding with something: on 2 consecutive readings under 15cm, the car
+stops, pivots in a fixed direction (a single forward-facing sensor can't
+tell which side has more room) until the path reads clear or it gives up
+after a bounded number of turns, then resumes. `TESTING_MOTORS_DISABLED` in
+`main.py` runs the full detection/decision pipeline with motors kept
+silent, for bench-testing sensors without the car driving off.
 
 ### Deploying to the device
 
