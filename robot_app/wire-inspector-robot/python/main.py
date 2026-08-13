@@ -17,6 +17,7 @@ thread).
 """
 import importlib.util
 import json
+import random
 import shutil
 import subprocess
 import sys
@@ -82,11 +83,11 @@ SCAN_TARGET_CONF = 0.97
 # car actually driving off.
 TESTING_MOTORS_DISABLED = False
 
-# Single forward-facing sensor - no way to tell which side has more room, so
-# obstacles are always avoided by turning the same fixed direction.
+# Single forward-facing sensor - no way to tell which side actually has more
+# room, so each avoidance picks a random direction rather than always the
+# same one (helps avoid getting stuck repeatedly turning into a dead end).
 OBSTACLE_THRESHOLD_CM = 15.0   # trigger avoidance when something is closer than this
 OBSTACLE_CONSEC_REQUIRED = 2  # consecutive close readings before triggering (debounce)
-AVOID_DIRECTION = MOTION_PIVOT_RIGHT
 AVOID_TURN_MS = 400           # pivot burst duration per avoidance step
 AVOID_MAX_STEPS = 6           # give up turning after this many steps (don't spin forever)
 
@@ -323,10 +324,13 @@ def get_distance_cm():
 
 
 def avoid_obstacle(trigger_dist):
-    """Something is too close ahead - stop, turn away (fixed direction, since
-    a single forward-facing sensor can't tell which side has more room) until
-    the path reads clear again or we give up turning, then resume."""
-    print(f"[avoid] obstacle at {trigger_dist:.1f} cm, turning")
+    """Something is too close ahead - stop, turn away (random direction each
+    time, since a single forward-facing sensor can't tell which side has
+    more room) until the path reads clear again or we give up turning, then
+    resume."""
+    direction = random.choice((MOTION_PIVOT_LEFT, MOTION_PIVOT_RIGHT))
+    print(f"[avoid] obstacle at {trigger_dist:.1f} cm, turning "
+          f"{'left' if direction == MOTION_PIVOT_LEFT else 'right'}")
     robot_state["mode"] = "AVOIDING OBSTACLE"
     send_motion(MOTION_STOP)
     time.sleep(0.1)
@@ -334,7 +338,7 @@ def avoid_obstacle(trigger_dist):
     steps = 0
     dist = trigger_dist
     for steps in range(1, AVOID_MAX_STEPS + 1):
-        pivot_burst(AVOID_DIRECTION, AVOID_TURN_MS)
+        pivot_burst(direction, AVOID_TURN_MS)
         time.sleep(0.1)
         dist = get_distance_cm()
         if dist < 0 or dist >= OBSTACLE_THRESHOLD_CM:

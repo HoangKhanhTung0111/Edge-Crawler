@@ -58,7 +58,8 @@ void pivot_left() {
   analogWrite(PWMA, 0);
 }
 
-// Returns distance in cm, or -1.0 on timeout (no echo / out of range / stuck pin).
+// Returns distance in cm; 2.0 if something is closer than reliably
+// measurable; -1.0 if no echo came back at all (out of range / stuck pin).
 //
 // Hand-rolled instead of using pulseIn(): observed pulseIn() on this
 // Zephyr/STM32 core occasionally blocking for several seconds instead of
@@ -70,10 +71,17 @@ float get_distance_cm() {
   // HC-SR04 itself asserts Echo for up to ~38ms when nothing is in range
   // before giving up, so our own wait has to comfortably clear that.
   const unsigned long TIMEOUT_US = 45000UL;
-  // The sensor can't physically detect anything closer than ~2cm (~116us
-  // round trip) - any shorter pulse is electrical noise on the Echo line
-  // (e.g. coupling right at the Trig edge), not a real reading.
+  // The sensor can't reliably time anything closer than ~2cm (~116us round
+  // trip) - a shorter pulse means either electrical noise on the Echo line
+  // (e.g. coupling right at the Trig edge) or a real object sitting inside
+  // that blind zone. We can't tell which from the pulse alone, so we report
+  // it as "very close" (MIN_VALID_CM) rather than -1.0 ("nothing there") -
+  // treating it as "clear" let the car drive straight into anything closer
+  // than 2cm, which is the opposite of what an obstacle sensor should do.
+  // Bogus single-tick noise is instead filtered by the caller requiring
+  // consecutive close readings before reacting.
   const unsigned long MIN_VALID_US = 100UL;
+  const float MIN_VALID_CM = 2.0;
 
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
@@ -93,7 +101,7 @@ float get_distance_cm() {
   unsigned long pulse_end = micros();
   unsigned long duration_us = pulse_end - pulse_start;
 
-  if (duration_us < MIN_VALID_US) return -1.0;
+  if (duration_us < MIN_VALID_US) return MIN_VALID_CM;
   return duration_us / 58.0;  // standard HC-SR04 conversion: round-trip us / 58 = cm
 }
 
