@@ -5,7 +5,7 @@ from PIL import Image
 import ai_edge_litert.interpreter as tflite
 
 MODEL_PATH = "wire_classifier_quantized.tflite"
-LABELS = ["lanh (intact)", "dut (broken)"]
+LABELS = ["intact", "broken"]
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
@@ -61,7 +61,7 @@ def main():
     pred = int(probs.argmax())
 
     print(f"Anh: {image_path}")
-    print(f"Ket qua: {LABELS[pred]}  (lanh={probs[0]*100:.1f}%, dut={probs[1]*100:.1f}%)")
+    print(f"Ket qua: {LABELS[pred]}  (intact={probs[0]*100:.1f}%, broken={probs[1]*100:.1f}%)")
     print(f"Inference time: {dt:.2f} ms/anh")
 
 

@@ -3,9 +3,9 @@ Wire-defect inspection robot.
 
 Behaviour (as requested):
   - drives forward continuously
-  - "lanh" (intact wire) -> ignored, keeps driving
-  - "dut" (broken wire), seen for a few consecutive frames -> stop, pivot to
-    hunt for the pivot angle that maximises the classifier's "dut" confidence
+  - intact wire -> ignored, keeps driving
+  - broken wire, seen for a few consecutive frames -> stop, pivot to hunt for
+    the pivot angle that maximises the classifier's "broken" confidence
     (best available proxy for "wire centered in frame" since the model is a
     classifier, not a detector with bounding boxes), photograph, log, undo
     the pivot to restore heading, resume driving.
@@ -53,8 +53,8 @@ CAMERA_INDEX = 2  # Logitech HD Webcam C615 -> /dev/video2
 PORT = 8080
 LOG_DIR = APP_ROOT / "inspection_log"
 
-LABELS = ["LANH (intact)", "DUT (broken)"]
-LABEL_COLORS = [(0, 200, 0), (0, 0, 255)]  # BGR: green for lanh, red for dut
+LABELS = ["INTACT", "BROKEN"]
+LABEL_COLORS = [(0, 200, 0), (0, 0, 255)]  # BGR: green for intact, red for broken
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
@@ -65,7 +65,7 @@ MOTION_FORWARD = 1
 MOTION_PIVOT_RIGHT = 2
 MOTION_PIVOT_LEFT = 3
 
-DUT_CONF_THRESHOLD = 0.80     # min confidence to count a frame as "dut"
+BROKEN_CONF_THRESHOLD = 0.80  # min confidence to count a frame as "broken"
 CONSEC_REQUIRED = 3           # consecutive qualifying frames before triggering a stop
 COOLDOWN_SEC = 4.0            # ignore new triggers for this long after resuming
 
@@ -209,7 +209,7 @@ def pivot_burst(mode, ms):
 
 
 def center_on_defect(initial_conf):
-    """Hill-climb the pivot angle that maximises 'dut' confidence, as a
+    """Hill-climb the pivot angle that maximises 'broken' confidence, as a
     proxy for having the broken wire centered in frame (the model is a
     classifier without bounding boxes, so this is the best-effort approach).
     Returns (net_pivot_ms signed +right/-left, best_conf)."""
@@ -224,7 +224,7 @@ def center_on_defect(initial_conf):
         net_pivot_ms += sign * SCAN_STEP_MS
 
         label, conf = classify_latest(SCAN_SETTLE_S)
-        improved = label.startswith("DUT") and conf > best_conf
+        improved = label.startswith("BROKEN") and conf > best_conf
 
         if improved:
             best_conf = conf
@@ -249,7 +249,7 @@ def inspect_broken_wire(trigger_conf):
 
     frame = get_latest_frame()
     ts = time.strftime("%Y%m%d_%H%M%S")
-    fname = f"dut_{ts}_conf{int(best_conf * 100)}.jpg"
+    fname = f"broken_{ts}_conf{int(best_conf * 100)}.jpg"
     if frame is not None:
         cv2.imwrite(str(LOG_DIR / fname), frame)
 
@@ -273,7 +273,7 @@ def inspect_broken_wire(trigger_conf):
     Bridge.call("set_motion", MOTION_FORWARD)
 
 
-_consec_dut = 0
+_consec_broken = 0
 _cooldown_until = 0.0
 _driving_started = False
 
@@ -281,7 +281,7 @@ _driving_started = False
 def control_tick():
     """Called repeatedly by App.run(); one tick of the drive/detect/inspect
     state machine."""
-    global _consec_dut, _cooldown_until, _driving_started
+    global _consec_broken, _cooldown_until, _driving_started
 
     if not _driving_started:
         Bridge.call("set_motion", MOTION_FORWARD)
@@ -296,11 +296,11 @@ def control_tick():
     with state_lock:
         label, conf = state["label"], state["conf"]
 
-    is_dut = label.startswith("DUT") and conf >= DUT_CONF_THRESHOLD
-    _consec_dut = _consec_dut + 1 if is_dut else 0
+    is_broken = label.startswith("BROKEN") and conf >= BROKEN_CONF_THRESHOLD
+    _consec_broken = _consec_broken + 1 if is_broken else 0
 
-    if _consec_dut >= CONSEC_REQUIRED:
-        _consec_dut = 0
+    if _consec_broken >= CONSEC_REQUIRED:
+        _consec_broken = 0
         inspect_broken_wire(conf)
         _cooldown_until = time.time() + COOLDOWN_SEC
 

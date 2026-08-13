@@ -18,8 +18,8 @@ import ai_edge_litert.interpreter as tflite
 MODEL_PATH = "/home/arduino/wire_classifier/wire_classifier_quantized.tflite"
 CAMERA_INDEX = 2  # Logitech HD Webcam C615 -> /dev/video2
 PORT = 8080
-LABELS = ["LANH (intact)", "DUT (broken)"]
-LABEL_COLORS = [(0, 200, 0), (0, 0, 255)]  # BGR: green for lanh, red for dut
+LABELS = ["INTACT", "BROKEN"]
+LABEL_COLORS = [(0, 200, 0), (0, 0, 255)]  # BGR: green for intact, red for broken
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)

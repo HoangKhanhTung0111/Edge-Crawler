@@ -16,7 +16,7 @@ DATASET = BASE / "dataset"
 OUT = BASE / "runs"
 OUT.mkdir(exist_ok=True)
 
-LABELS = ["lanh", "dut"]  # index 0 = lanh (intact), 1 = dut (broken)
+LABELS = ["intact", "broken"]  # index 0 = intact, 1 = broken
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print("Device:", DEVICE)
 
@@ -27,7 +27,7 @@ def collect_samples():
         for subdir in sorted((DATASET / label).iterdir()):
             if not subdir.is_dir():
                 continue
-            subgroup = subdir.name  # e.g. "vang_lanh_vang", "den_dut_den" etc
+            subgroup = subdir.name  # e.g. "vang_intact_vang", "den_broken_den" etc
             for f in sorted(subdir.glob("*.jpg")):
                 samples.append((f, label_idx, subgroup))
     return samples
@@ -186,7 +186,7 @@ def main():
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
     print(f"\n=== Confusion matrix (toan bo val set) ===")
-    print(f"TP(dut->dut)={tp} TN(lanh->lanh)={tn} FP(lanh->dut)={fp} FN(dut->lanh)={fn}")
+    print(f"TP(broken->broken)={tp} TN(intact->intact)={tn} FP(intact->broken)={fp} FN(broken->intact)={fn}")
     print(f"Val acc={val_acc:.4f} Precision={precision:.4f} Recall={recall:.4f}")
 
     # Bias check: black-wire-only subset (background held constant across classes)

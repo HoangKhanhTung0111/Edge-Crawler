@@ -11,10 +11,10 @@ RAW = BASE / "raw_heic"
 OUT = BASE / "dataset"
 
 SOURCES = {
-    "lanh_vang": (RAW / "lanh_vang" / "Data", "lanh", "vang"),
-    "dut_vang": (RAW / "dut_vang" / "Data dây đứt ", "dut", "vang"),
-    "dut_den": (RAW / "dut_den" / "Đứt", "dut", "den"),
-    "lanh_den": (RAW / "lanh_den" / "Lành v2", "lanh", "den"),
+    "intact_vang": (RAW / "lanh_vang" / "Data", "intact", "vang"),
+    "broken_vang": (RAW / "dut_vang" / "Data dây đứt ", "broken", "vang"),
+    "broken_den": (RAW / "dut_den" / "Đứt", "broken", "den"),
+    "intact_den": (RAW / "lanh_den" / "Lành v2", "intact", "den"),
 }
 
 MAX_SIDE = 800  # resize longest side to this, keep aspect ratio; plenty for 224x224 training crops
@@ -40,6 +40,6 @@ for name, (src_dir, label, color) in SOURCES.items():
     print(f"{name}: {n_ok} ok, {n_fail} failed -> {out_dir}")
 
 print("\nTong ket:")
-for label in ["lanh", "dut"]:
+for label in ["intact", "broken"]:
     total = sum(1 for _ in (OUT / label).rglob("*.jpg"))
     print(f"  {label}: {total} anh")

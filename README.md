@@ -24,8 +24,8 @@ it's exploratory measurement code, not part of the robot itself.
 ## How it works
 
 1. **Model**: MobileNetV2 with a frozen ImageNet backbone and a retrained
-   2-class classifier head (`lanh` = intact, `dut` = broken), finetuned on
-   photos of wires against several backgrounds/colors.
+   2-class classifier head (`intact` / `broken`), finetuned on photos of
+   wires against several backgrounds/colors.
 2. **Bias check**: because the raw dataset confounds label with background in
    places, evaluation includes a background-controlled subset (black-wire-only,
    constant background across both classes) as a genuine bias diagnostic, not
@@ -33,8 +33,8 @@ it's exploratory measurement code, not part of the robot itself.
 3. **Export**: PyTorch -> ONNX -> quantized (INT8, w8a8) via Qualcomm AI Hub,
    compiled to `.tflite` targeting the device's Snapdragon core.
 4. **Robot loop**: drives forward by default; on 3 consecutive frames
-   classified as `dut` above a confidence threshold, stops, and searches for
-   the pivot angle that maximizes the classifier's `dut` confidence (the
+   classified as `broken` above a confidence threshold, stops, and searches
+   for the pivot angle that maximizes the classifier's `broken` confidence (the
    nearest available proxy for "wire centered in frame" since this is a
    classifier, not a detector with bounding boxes), photographs, logs, undoes
    the pivot to restore heading, and resumes.
@@ -43,7 +43,7 @@ it's exploratory measurement code, not part of the robot itself.
 
 | File | Purpose |
 |---|---|
-| `convert_and_organize.py` | Converts raw HEIC exports into the `lanh`/`dut` class folders used for training |
+| `convert_and_organize.py` | Converts raw HEIC exports into the `intact`/`broken` class folders used for training |
 | `train.py` | MobileNetV2 transfer learning: stratified split, heavy augmentation, bias-check eval |
 | `export_and_quantize.py` / `continue_quantize.py` | ONNX export + Qualcomm AI Hub quantize/compile job submission (the `continue_*` variant resumes from an already-submitted job id instead of resubmitting) |
 | `benchmark_wire_model.py` | Single-image correctness + inference-time check for the quantized `.tflite`, meant to run on-device |
@@ -58,7 +58,7 @@ photo exports with `convert_and_organize.py`.
 
 ```
 pip install torch torchvision pillow pillow-heif qai-hub
-python convert_and_organize.py   # raw_heic/ -> dataset/{lanh,dut}/...
+python convert_and_organize.py   # raw_heic/ -> dataset/{intact,broken}/...
 python train.py                  # -> runs/mobilenet_v2_wire_best.pt, training_report.json
 python export_and_quantize.py    # -> runs/wire_classifier.onnx, submits AI Hub quantize+compile job
 # if export_and_quantize.py's job polling gets interrupted, resume with:
@@ -143,7 +143,7 @@ to `inspection_log/` inside the app folder on the device (`timestamp`,
 
 The model is a classifier, not an object detector — there's no bounding box
 to center on directly. "Centering" is approximated by hill-climbing the
-pivot angle that maximizes the model's own `dut` confidence, on the
+pivot angle that maximizes the model's own `broken` confidence, on the
 assumption that a more centered, better-framed wire yields a more confident
 classification. It's a reasonable best-effort heuristic for a demo, not a
 substitute for real localization.

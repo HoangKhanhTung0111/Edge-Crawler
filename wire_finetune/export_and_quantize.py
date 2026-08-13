@@ -45,7 +45,7 @@ calib_transform = transforms.Compose([
     transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
 ])
 
-all_images = list((DATASET / "lanh").rglob("*.jpg")) + list((DATASET / "dut").rglob("*.jpg"))
+all_images = list((DATASET / "intact").rglob("*.jpg")) + list((DATASET / "broken").rglob("*.jpg"))
 random.seed(0)
 random.shuffle(all_images)
 calib_images = all_images[:100]  # 100 samples is plenty for PTQ calibration
