@@ -115,7 +115,14 @@ TESTING_MOTORS_DISABLED = False
 # room, so each avoidance picks a random direction rather than always the
 # same one (helps avoid getting stuck repeatedly turning into a dead end).
 OBSTACLE_THRESHOLD_CM = 15.0   # trigger avoidance when something is closer than this
-OBSTACLE_CONSEC_REQUIRED = 2  # consecutive close readings before triggering (debounce)
+# Diagnostic logging showed the HC-SR04 reading legitimately fails (times
+# out) roughly every other poll, regardless of what's actually in front of
+# it - a strict "N consecutive" debounce needs a run of back-to-back good
+# reads, which is unlikely if every other one drops, so it could miss a
+# real obstacle sitting right in front of it. Sliding-window majority
+# (same fix already applied to broken-wire detection) tolerates that.
+OBSTACLE_WINDOW_SIZE = 3
+OBSTACLE_WINDOW_REQUIRED = 2
 AVOID_TURN_MS = 400           # pivot burst duration per avoidance step
 AVOID_MAX_STEPS = 6           # give up turning after this many steps (don't spin forever)
 
@@ -449,7 +456,7 @@ def avoid_obstacle(trigger_dist):
 
 
 _broken_window = deque(maxlen=BROKEN_WINDOW_SIZE)
-_consec_close = 0
+_close_window = deque(maxlen=OBSTACLE_WINDOW_SIZE)
 _cooldown_until = 0.0
 _driving_started = False
 _last_heartbeat = 0.0
@@ -459,7 +466,7 @@ def control_tick():
     """Called repeatedly by App.run(); one tick of the drive/detect/inspect/
     avoid state machine. Obstacle avoidance takes priority over wire
     inspection since it's about not colliding with something."""
-    global _consec_close, _cooldown_until, _driving_started
+    global _cooldown_until, _driving_started
 
     if not _driving_started:
         send_motion(MOTION_FORWARD)
@@ -477,10 +484,10 @@ def control_tick():
         print(f"[tick] distance={dist:.1f}cm" if dist >= 0 else "[tick] distance=out-of-range")
         _last_heartbeat = now
     is_close = 0 <= dist < OBSTACLE_THRESHOLD_CM
-    _consec_close = _consec_close + 1 if is_close else 0
+    _close_window.append(is_close)
 
-    if _consec_close >= OBSTACLE_CONSEC_REQUIRED:
-        _consec_close = 0
+    if sum(_close_window) >= OBSTACLE_WINDOW_REQUIRED:
+        _close_window.clear()
         avoid_obstacle(dist)
         _cooldown_until = time.time() + COOLDOWN_SEC
         return
