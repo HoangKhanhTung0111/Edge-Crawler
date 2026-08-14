@@ -27,14 +27,15 @@
 // and/or shorter KICK_MS instead of removing it).
 const int SPEED = 100;
 
-// The car drifted right when driving straight at equal PWM on both sides -
-// pivot_right() (motor A alone) turns the car right, so A is the left
-// wheel; trimming it down brings the two sides back into balance. Still
-// drifting right at TRIM_A=8, same direction as before - direction was
-// right, magnitude wasn't enough, so raised it. If it now drifts left
-// instead, the magnitude overshot; back it off. If it drifts right at all
-// keep raising it.
-const int TRIM_A = 15;
+// Confirmed by feel: the right wheel (motor B - pivot_left() drives B alone
+// and turns the car left, so B is the right wheel) is physically weaker
+// than the left, so it needs *more* PWM to match, not the left needing
+// less. Boosting the weak side keeps both wheels near full torque, which
+// matters more now that SPEED is already close to the stall threshold -
+// deliberately handicapping the good motor (the old TRIM_A approach) just
+// made the whole car weaker instead of fixing the imbalance. Raise this
+// further if still drifting right; back off if it starts drifting left.
+const int TRIM_B = 15;
 
 // Motion modes, set from Python via Bridge.call("set_motion", mode)
 enum Motion {
@@ -54,8 +55,8 @@ void drive_forward() {
   digitalWrite(AIN2, LOW);
   digitalWrite(BIN1, HIGH);
   digitalWrite(BIN2, LOW);
-  analogWrite(PWMA, SPEED - TRIM_A);
-  analogWrite(PWMB, SPEED);
+  analogWrite(PWMA, SPEED);
+  analogWrite(PWMB, min(255, SPEED + TRIM_B));
 }
 
 // Pivot in place by driving only one side (matches the "right"/"left" test
