@@ -27,19 +27,14 @@
 // and/or shorter KICK_MS instead of removing it).
 const int SPEED = 100;
 
-// Confirmed by feel: the right wheel (motor B - pivot_left() drives B alone
-// and turns the car left, so B is the right wheel) is physically weaker
-// than the left, so it needs *more* PWM to match, not the left needing
-// less. Boosting the weak side keeps both wheels near full torque, which
-// matters more now that SPEED is already close to the stall threshold -
-// deliberately handicapping the good motor (the old TRIM_A approach) just
-// made the whole car weaker instead of fixing the imbalance. Still
-// drifting right at 15, then 30, then 50 - a hand check didn't turn up an
-// obvious jam, so still treating this as PWM balance for now and pushing
-// further. If this still isn't enough, worth also trying it the other way
-// (trim PWMA down instead of boosting PWMB up) in case a very weak B motor
-// is closer to the driver/battery's real output ceiling than expected.
-const int TRIM_B = 80;
+// The pivot_left()-drives-B-alone-so-B-must-be-the-right-wheel deduction
+// below was backwards: escalating TRIM_B (15 -> 30 -> 50 -> 80) was
+// visibly speeding up the LEFT wheel, not the right one, confirming B is
+// actually the LEFT wheel and A is the weak right one. All that escalation
+// was boosting the side that was already fine, making the real imbalance
+// worse each step (just not obviously so until 80 made it unmistakable).
+// Reset to a moderate value on the correct side and retune from here.
+const int TRIM_A = 25;
 
 // Motion modes, set from Python via Bridge.call("set_motion", mode)
 enum Motion {
@@ -59,8 +54,8 @@ void drive_forward() {
   digitalWrite(AIN2, LOW);
   digitalWrite(BIN1, HIGH);
   digitalWrite(BIN2, LOW);
-  analogWrite(PWMA, SPEED);
-  analogWrite(PWMB, min(255, SPEED + TRIM_B));
+  analogWrite(PWMA, min(255, SPEED + TRIM_A));
+  analogWrite(PWMB, SPEED);
 }
 
 // Pivot in place by driving only one side (matches the "right"/"left" test
