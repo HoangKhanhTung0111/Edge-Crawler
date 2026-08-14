@@ -155,13 +155,13 @@ def open_camera():
 
 
 def configure_camera(c):
-    # MJPG is what this webcam natively compresses to on-device; forcing it
-    # (fourcc must be set before width/height on some drivers) avoids an
-    # extra software format-conversion step some UVC drivers otherwise do,
-    # which was showing up as growing latency (stable read-fps, but an
-    # increasing lag between a real-world change and it showing up) rather
-    # than dropped frames.
-    c.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    # Tried forcing MJPG (avoids a software format-conversion step some
+    # UVC drivers add latency for) as a fix for growing lag - but this
+    # camera's on-chip MJPG encoding turned out to cap out lower than its
+    # default mode (cam+infer fps both dropped to 12 from 15-16). The real
+    # cause of the lag was inference_loop burning 266% CPU reclassifying
+    # stale frames (see inference_loop) - now that's fixed, so drop back to
+    # the camera's default format instead of trading fps for it.
     c.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     c.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
