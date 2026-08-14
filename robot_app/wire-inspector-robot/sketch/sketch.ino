@@ -33,9 +33,10 @@ const int SPEED = 100;
 // less. Boosting the weak side keeps both wheels near full torque, which
 // matters more now that SPEED is already close to the stall threshold -
 // deliberately handicapping the good motor (the old TRIM_A approach) just
-// made the whole car weaker instead of fixing the imbalance. Raise this
-// further if still drifting right; back off if it starts drifting left.
-const int TRIM_B = 15;
+// made the whole car weaker instead of fixing the imbalance. Still
+// noticeably weak/lagging at TRIM_B=15, so raised it further. Keep raising
+// if it's still weak; back off if it starts drifting left instead.
+const int TRIM_B = 30;
 
 // Motion modes, set from Python via Bridge.call("set_motion", mode)
 enum Motion {
