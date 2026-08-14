@@ -183,27 +183,15 @@ def capture_loop():
     n = 0
     t_win = time.time()
     while True:
-        cap = camera_state["cap"]
-        # CAP_PROP_BUFFERSIZE=1 isn't honored by every driver - if the
-        # camera's internal queue ever falls behind (e.g. a brief USB
-        # hiccup), a plain read() keeps returning the OLDEST queued frame
-        # first, so latency creeps up over time even though the read-rate
-        # (capture_fps) looks perfectly normal. Draining any extra queued
-        # frames each iteration keeps us on the newest one instead.
-        ok = cap.grab()
-        # Bounded, not unbounded: grab() blocks waiting for the next frame
-        # once the queue is actually empty, and the camera keeps producing
-        # frames indefinitely - an unbounded "while cap.grab(): pass" would
-        # never exit and capture_loop would never call retrieve() again.
-        # A handful of extra grabs is enough to clear a small backlog
-        # without risking that.
-        for _ in range(3):
-            if not cap.grab():
-                break
-        if not ok:
-            time.sleep(0.01)
-            continue
-        ok, frame = cap.retrieve()
+        # Reverted the extra-grab() "drain" attempt: grab() blocks waiting
+        # for the next frame regardless of whether the wait is because of a
+        # real backlog or just because no new frame exists yet - there's no
+        # portable way to tell those apart, so each extra grab() was really
+        # just an extra wait for a whole new frame period. 3 extra grabs
+        # every iteration meant waiting for 4 frame-arrivals per frame
+        # actually processed, quartering the effective fps (15 -> ~3-4,
+        # matching exactly what was reported).
+        ok, frame = camera_state["cap"].read()
         if not ok:
             time.sleep(0.01)
             continue
