@@ -33,6 +33,13 @@ const int SPEED = 90;
 // instead; retune the magnitude by feel.
 const int TRIM_A = 8;
 
+// SPEED holds a steady roll fine but isn't enough to break static friction
+// from a dead stop - without this the car needed a manual push after every
+// stop-for-inspection/avoidance. A brief full-power kick gets it moving,
+// then it settles to the normal cruising SPEED.
+const int KICK_SPEED = 255;
+const int KICK_MS = 150;
+
 // Motion modes, set from Python via Bridge.call("set_motion", mode)
 enum Motion {
   MOTION_STOP = 0,
@@ -51,6 +58,11 @@ void drive_forward() {
   digitalWrite(AIN2, LOW);
   digitalWrite(BIN1, HIGH);
   digitalWrite(BIN2, LOW);
+
+  analogWrite(PWMA, KICK_SPEED - TRIM_A);
+  analogWrite(PWMB, KICK_SPEED);
+  delay(KICK_MS);
+
   analogWrite(PWMA, SPEED - TRIM_A);
   analogWrite(PWMB, SPEED);
 }
