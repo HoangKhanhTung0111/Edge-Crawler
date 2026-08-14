@@ -70,7 +70,14 @@ MOTION_FORWARD = 1
 MOTION_PIVOT_RIGHT = 2
 MOTION_PIVOT_LEFT = 3
 
-BROKEN_CONF_THRESHOLD = 0.80  # min confidence to count a frame as "broken"
+BROKEN_CONF_THRESHOLD = 0.92  # min confidence to count a frame as "broken"
+# Raised from 0.80: the model was never trained on "no wire in frame at
+# all" (e.g. camera pointed at bare floor/carpet after a pivot) since every
+# training image had a wire in it - it has no way to say "unsure", so
+# unfamiliar backgrounds sometimes get classified BROKEN with real
+# confidence. A higher bar filters out more of that without needing a
+# retrain; it won't catch every false positive (some scored 85-86%), but
+# genuine broken-wire detections tend to score much higher than that.
 # A strict "N consecutive" streak was too fragile at driving speed: motion
 # blur/vibration would flip a single frame back to INTACT, resetting the
 # streak to 0 and letting a genuinely broken wire sail past unconfirmed.

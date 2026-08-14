@@ -34,7 +34,8 @@ const int SPEED = 100;
 // was boosting the side that was already fine, making the real imbalance
 // worse each step (just not obviously so until 80 made it unmistakable).
 // Reset to a moderate value on the correct side and retune from here.
-const int TRIM_A = 25;
+// 25 overshot slightly (now drifting left a touch) - backed off.
+const int TRIM_A = 16;
 
 // Motion modes, set from Python via Bridge.call("set_motion", mode)
 enum Motion {
