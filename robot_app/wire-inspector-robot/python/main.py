@@ -41,7 +41,7 @@ _ensure("ai_edge_litert", "ai-edge-litert==2.2.0")
 
 import cv2
 import numpy as np
-from flask import Flask, Response
+from flask import Flask, Response, abort, send_from_directory
 import ai_edge_litert.interpreter as tflite
 
 from arduino.app_utils import App, Bridge
@@ -84,6 +84,14 @@ SCAN_SETTLE_S = 0.25          # wait after each pivot for a fresh classified fra
 SCAN_MAX_STEPS = 8
 SCAN_TARGET_CONF = 0.97
 
+# Purely cosmetic "look, it's inspecting thoroughly" wiggle for the demo -
+# alternates pivots (net rotation ~0, even step count) after the real photo
+# is already saved. No camera capture happens during this - only ever one
+# real photo per detection, to keep storage use down.
+THEATRICAL_STEPS = 6
+THEATRICAL_TURN_MS = 150
+THEATRICAL_PAUSE_S = 0.25
+
 # Set True to run camera + sensors + full decision logic with the motors
 # kept completely silent - useful for bench-testing detection without the
 # car actually driving off.
@@ -125,12 +133,21 @@ def open_camera():
     return None
 
 
-cap = open_camera()
-if cap is None:
+def configure_camera(c):
+    c.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    c.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+
+_cap0 = open_camera()
+if _cap0 is None:
     raise RuntimeError("Khong tim thay camera nao kha dung (by-id lan fallback index deu that bai)")
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+configure_camera(_cap0)
+
+# Held in a dict (not a bare module-level name) so the watchdog thread can
+# swap in a freshly reopened VideoCapture out from under capture_loop().
+camera_state = {"cap": _cap0, "last_frame_at": time.time()}
+CAMERA_STALL_TIMEOUT_S = 3.0  # no new frame for this long -> assume the driver/USB hung and reopen
 
 frame_lock = threading.Lock()
 latest_frame = {"frame": None, "capture_fps": 0.0}
@@ -145,12 +162,13 @@ def capture_loop():
     n = 0
     t_win = time.time()
     while True:
-        ok, frame = cap.read()
+        ok, frame = camera_state["cap"].read()
         if not ok:
             time.sleep(0.01)
             continue
         with frame_lock:
             latest_frame["frame"] = frame
+        camera_state["last_frame_at"] = time.time()
         n += 1
         now = time.time()
         if now - t_win >= 1.0:
@@ -158,6 +176,34 @@ def capture_loop():
                 latest_frame["capture_fps"] = n / (now - t_win)
             n = 0
             t_win = now
+
+
+def camera_watchdog_loop():
+    """cap.read() can hang indefinitely on a USB/V4L2 glitch without ever
+    raising - no exception, no timeout, the stream just visibly freezes on
+    the last good frame forever. Detect that (no new frame for a while) and
+    force a reopen. Swap in the new capture object *before* releasing the
+    old one - releasing a VideoCapture from another thread while it's stuck
+    inside a blocking read() is what actually unblocks that stuck call."""
+    while True:
+        time.sleep(1.0)
+        if time.time() - camera_state["last_frame_at"] < CAMERA_STALL_TIMEOUT_S:
+            continue
+        print("[camera] stalled, reopening...")
+        old_cap = camera_state["cap"]
+        new_cap = open_camera()
+        if new_cap is None:
+            print("[camera] reopen failed, will retry")
+            camera_state["last_frame_at"] = time.time()  # avoid a tight retry loop
+            continue
+        configure_camera(new_cap)
+        camera_state["cap"] = new_cap
+        camera_state["last_frame_at"] = time.time()
+        try:
+            old_cap.release()
+        except Exception as error:
+            print(f"[camera] error releasing stalled capture: {type(error).__name__}: {error}")
+        print("[camera] reopened")
 
 
 def get_latest_frame():
@@ -233,6 +279,17 @@ def inference_loop():
                 state["infer_fps"] = infer_fps
 
 
+def draw_label(frame, label, conf, color):
+    """Burns the classification into the top-left corner. Used for both the
+    live MJPEG overlay and the photo saved to inspection_log/, so a saved
+    photo shows the same "BROKEN 94%"-style readout an evidence photo needs,
+    not a bare frame."""
+    text = f"{label} {conf * 100:.1f}%"
+    cv2.rectangle(frame, (5, 5), (10 + 12 * len(text), 42), (0, 0, 0), -1)
+    cv2.putText(frame, text, (10, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2, cv2.LINE_AA)
+    return frame
+
+
 def classify_latest(min_wait=0.0):
     if min_wait > 0:
         time.sleep(min_wait)
@@ -299,6 +356,7 @@ def inspect_broken_wire(trigger_conf):
     ts = time.strftime("%Y%m%d_%H%M%S")
     fname = f"broken_{ts}_conf{int(best_conf * 100)}.jpg"
     if frame is not None:
+        draw_label(frame, "BROKEN", best_conf, LABEL_COLORS[1])
         cv2.imwrite(str(LOG_DIR / fname), frame)
 
     entry = {
@@ -310,6 +368,12 @@ def inspect_broken_wire(trigger_conf):
     with open(LOG_DIR / "inspections.jsonl", "a") as f:
         f.write(json.dumps(entry) + "\n")
     print(f"[inspect] saved {fname} conf={best_conf:.2f} pivot_ms={net_pivot_ms}")
+
+    # cosmetic only - the real photo is already saved above
+    for i in range(THEATRICAL_STEPS):
+        d = MOTION_PIVOT_LEFT if i % 2 == 0 else MOTION_PIVOT_RIGHT
+        pivot_burst(d, THEATRICAL_TURN_MS)
+        time.sleep(THEATRICAL_PAUSE_S)
 
     # undo the pivot so the car resumes roughly its original heading
     undo_ms = abs(net_pivot_ms)
@@ -430,9 +494,8 @@ def mjpeg_generator():
         with frame_lock:
             cap_fps = latest_frame["capture_fps"]
 
-        text = f"{label} {conf * 100:.1f}%"
-        cv2.rectangle(frame, (5, 5), (10 + 12 * len(text), 90), (0, 0, 0), -1)
-        cv2.putText(frame, text, (10, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2, cv2.LINE_AA)
+        cv2.rectangle(frame, (5, 46), (330, 90), (0, 0, 0), -1)
+        draw_label(frame, label, conf, color)
         cv2.putText(frame, f"{ms:.0f} ms  |  cam {cap_fps:.1f} fps  |  infer {infer_fps:.1f} fps",
                     (10, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
         cv2.putText(frame, robot_state["mode"], (10, 82),
@@ -452,8 +515,46 @@ def index():
         "<body style='background:#111;text-align:center;'>"
         "<h2 style='color:#eee;font-family:sans-serif'>UnoQ Wire Inspector Robot</h2>"
         "<img src='/stream' style='max-width:95%;border:2px solid #444'>"
+        "<p><a href='/gallery' style='color:#6cf;font-family:sans-serif'>View captured detections &rarr;</a></p>"
         "</body></html>"
     )
+
+
+@flask_app.route('/gallery')
+def gallery():
+    entries = []
+    log_path = LOG_DIR / "inspections.jsonl"
+    if log_path.exists():
+        with open(log_path) as f:
+            entries = [json.loads(line) for line in f if line.strip()]
+    entries.reverse()  # most recent first
+
+    cards = "".join(
+        f"<div style='display:inline-block;margin:10px;text-align:center'>"
+        f"<img src='/photos/{e['image']}' style='max-width:320px;border:2px solid #444;border-radius:4px'><br>"
+        f"<span style='color:#ccc;font-family:sans-serif;font-size:14px'>"
+        f"{e['timestamp']} &middot; {e['confidence'] * 100:.1f}%</span></div>"
+        for e in entries
+    )
+    if not cards:
+        cards = "<p style='color:#888;font-family:sans-serif'>No broken-wire detections logged yet.</p>"
+
+    return (
+        "<html><head><title>Detections - Wire Inspector Robot</title></head>"
+        "<body style='background:#111;text-align:center'>"
+        "<h2 style='color:#eee;font-family:sans-serif'>Broken-wire detections "
+        f"({len(entries)})</h2>"
+        "<p><a href='/' style='color:#6cf;font-family:sans-serif'>&larr; back to live stream</a></p>"
+        f"{cards}"
+        "</body></html>"
+    )
+
+
+@flask_app.route('/photos/<path:filename>')
+def photo(filename):
+    if "/" in filename or "\\" in filename:
+        abort(404)
+    return send_from_directory(str(LOG_DIR), filename)
 
 
 @flask_app.route('/stream')
@@ -467,6 +568,7 @@ def run_flask():
 
 # --------------------------------------------------------------------------
 threading.Thread(target=capture_loop, daemon=True).start()
+threading.Thread(target=camera_watchdog_loop, daemon=True).start()
 threading.Thread(target=inference_loop, daemon=True).start()
 threading.Thread(target=run_flask, daemon=True).start()
 

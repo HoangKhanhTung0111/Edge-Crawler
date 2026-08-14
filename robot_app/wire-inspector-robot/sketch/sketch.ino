@@ -18,11 +18,18 @@
 #define TRIG_PIN 3
 #define ECHO_PIN 2
 
-// Lowered from 180: at full speed the camera frames were blurry/shaky enough
-// that a genuinely broken wire would flicker to INTACT on individual frames,
-// which combined with the old strict "N consecutive" debounce meant the car
-// could sail past a break without ever confirming it for long enough to stop.
-const int SPEED = 130;
+// Lowered from 180 -> 130 -> 50: at higher speed the camera frames were
+// blurry/shaky enough that a genuinely broken wire would flicker to INTACT
+// on individual frames, and the car was generally moving faster than makes
+// sense for a wire-by-wire inspection pass anyway.
+const int SPEED = 50;
+
+// The car drifted right when driving straight at equal PWM on both sides -
+// pivot_right() (motor A alone) turns the car right, so A is the left
+// wheel; trimming it down brings the two sides back into balance. If it
+// now drifts left instead, flip this to trim PWMB down by the same amount
+// instead; retune the magnitude by feel.
+const int TRIM_A = 8;
 
 // Motion modes, set from Python via Bridge.call("set_motion", mode)
 enum Motion {
@@ -42,7 +49,7 @@ void drive_forward() {
   digitalWrite(AIN2, LOW);
   digitalWrite(BIN1, HIGH);
   digitalWrite(BIN2, LOW);
-  analogWrite(PWMA, SPEED);
+  analogWrite(PWMA, SPEED - TRIM_A);
   analogWrite(PWMB, SPEED);
 }
 
