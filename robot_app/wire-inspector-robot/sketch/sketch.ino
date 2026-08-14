@@ -18,7 +18,11 @@
 #define TRIG_PIN 3
 #define ECHO_PIN 2
 
-const int SPEED = 180;
+// Lowered from 180: at full speed the camera frames were blurry/shaky enough
+// that a genuinely broken wire would flicker to INTACT on individual frames,
+// which combined with the old strict "N consecutive" debounce meant the car
+// could sail past a break without ever confirming it for long enough to stop.
+const int SPEED = 130;
 
 // Motion modes, set from Python via Bridge.call("set_motion", mode)
 enum Motion {

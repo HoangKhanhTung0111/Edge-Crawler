@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
 from pathlib import Path
 
 
@@ -70,7 +71,12 @@ MOTION_PIVOT_RIGHT = 2
 MOTION_PIVOT_LEFT = 3
 
 BROKEN_CONF_THRESHOLD = 0.80  # min confidence to count a frame as "broken"
-CONSEC_REQUIRED = 3           # consecutive qualifying frames before triggering a stop
+# A strict "N consecutive" streak was too fragile at driving speed: motion
+# blur/vibration would flip a single frame back to INTACT, resetting the
+# streak to 0 and letting a genuinely broken wire sail past unconfirmed.
+# A sliding-window majority tolerates that kind of one-off flicker.
+BROKEN_WINDOW_SIZE = 5        # look at the last N frames
+BROKEN_WINDOW_REQUIRED = 3    # ...and trigger once at least this many were "broken"
 COOLDOWN_SEC = 4.0            # ignore new triggers for this long after resuming
 
 SCAN_STEP_MS = 100            # pivot burst duration per centering step
@@ -349,7 +355,7 @@ def avoid_obstacle(trigger_dist):
     send_motion(MOTION_FORWARD)
 
 
-_consec_broken = 0
+_broken_window = deque(maxlen=BROKEN_WINDOW_SIZE)
 _consec_close = 0
 _cooldown_until = 0.0
 _driving_started = False
@@ -360,7 +366,7 @@ def control_tick():
     """Called repeatedly by App.run(); one tick of the drive/detect/inspect/
     avoid state machine. Obstacle avoidance takes priority over wire
     inspection since it's about not colliding with something."""
-    global _consec_broken, _consec_close, _cooldown_until, _driving_started
+    global _consec_close, _cooldown_until, _driving_started
 
     if not _driving_started:
         send_motion(MOTION_FORWARD)
@@ -390,10 +396,10 @@ def control_tick():
         label, conf = state["label"], state["conf"]
 
     is_broken = label.startswith("BROKEN") and conf >= BROKEN_CONF_THRESHOLD
-    _consec_broken = _consec_broken + 1 if is_broken else 0
+    _broken_window.append(is_broken)
 
-    if _consec_broken >= CONSEC_REQUIRED:
-        _consec_broken = 0
+    if sum(_broken_window) >= BROKEN_WINDOW_REQUIRED:
+        _broken_window.clear()
         inspect_broken_wire(conf)
         _cooldown_until = time.time() + COOLDOWN_SEC
 
