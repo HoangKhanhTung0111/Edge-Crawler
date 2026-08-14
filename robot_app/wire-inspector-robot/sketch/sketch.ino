@@ -34,9 +34,12 @@ const int SPEED = 100;
 // matters more now that SPEED is already close to the stall threshold -
 // deliberately handicapping the good motor (the old TRIM_A approach) just
 // made the whole car weaker instead of fixing the imbalance. Still
-// noticeably weak/lagging at TRIM_B=15, so raised it further. Keep raising
-// if it's still weak; back off if it starts drifting left instead.
-const int TRIM_B = 30;
+// drifting right at 15, then at 30 - each +15 step barely moved the
+// needle, so jumping further this time. If 50 still isn't enough, this is
+// probably not a pure PWM-balance problem anymore (could be a dragging
+// wheel/axle, alignment, or a wiring/connector issue on the B side worth
+// checking by hand) rather than something to keep trimming away.
+const int TRIM_B = 50;
 
 // Motion modes, set from Python via Bridge.call("set_motion", mode)
 enum Motion {
