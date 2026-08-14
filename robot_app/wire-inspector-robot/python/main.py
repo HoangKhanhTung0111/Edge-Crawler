@@ -189,6 +189,7 @@ robot_state = {"mode": "BOOTING"}
 def capture_loop():
     n = 0
     t_win = time.time()
+    last_signature = None
     while True:
         # Reverted the extra-grab() "drain" attempt: grab() blocks waiting
         # for the next frame regardless of whether the wait is because of a
@@ -204,7 +205,18 @@ def capture_loop():
             continue
         with frame_lock:
             latest_frame["frame"] = frame
-        camera_state["last_frame_at"] = time.time()
+        # A "successful" read() doesn't guarantee a genuinely NEW frame - if
+        # the driver ever gets stuck handing back the same buffered image
+        # forever, reads keep succeeding (so a read-failure-only watchdog
+        # never fires) while the stream visibly freezes. Only count this as
+        # a live frame if the content actually changed (cheap downsampled
+        # signature, not a full-frame compare) - real camera sensor noise
+        # means even a static scene never repeats byte-for-byte, so this is
+        # safe against false "stalled" triggers.
+        signature = frame[::20, ::20].tobytes()
+        if signature != last_signature:
+            camera_state["last_frame_at"] = time.time()
+            last_signature = signature
         n += 1
         now = time.time()
         if now - t_win >= 1.0:
