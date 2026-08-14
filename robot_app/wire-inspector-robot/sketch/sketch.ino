@@ -18,11 +18,13 @@
 #define TRIG_PIN 3
 #define ECHO_PIN 2
 
-// Lowered from 180 -> 130 -> 50: at higher speed the camera frames were
-// blurry/shaky enough that a genuinely broken wire would flicker to INTACT
-// on individual frames, and the car was generally moving faster than makes
-// sense for a wire-by-wire inspection pass anyway.
-const int SPEED = 50;
+// 180 -> 130 (blur/vibration was flickering BROKEN back to INTACT) -> 50
+// (requested, but too low: motors got the PWM signal fine - RPC calls
+// succeeded, no errors - but 50/255 (~20%) is below this motor+chassis's
+// stall threshold, so they hummed without actually turning. 90 is a
+// starting point between "confirmed too low" and "confirmed working" (130)
+// - retune from here by feel.
+const int SPEED = 90;
 
 // The car drifted right when driving straight at equal PWM on both sides -
 // pivot_right() (motor A alone) turns the car right, so A is the left
