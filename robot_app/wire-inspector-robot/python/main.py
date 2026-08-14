@@ -148,6 +148,13 @@ def open_camera():
 
 
 def configure_camera(c):
+    # MJPG is what this webcam natively compresses to on-device; forcing it
+    # (fourcc must be set before width/height on some drivers) avoids an
+    # extra software format-conversion step some UVC drivers otherwise do,
+    # which was showing up as growing latency (stable read-fps, but an
+    # increasing lag between a real-world change and it showing up) rather
+    # than dropped frames.
+    c.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
     c.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     c.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -176,7 +183,27 @@ def capture_loop():
     n = 0
     t_win = time.time()
     while True:
-        ok, frame = camera_state["cap"].read()
+        cap = camera_state["cap"]
+        # CAP_PROP_BUFFERSIZE=1 isn't honored by every driver - if the
+        # camera's internal queue ever falls behind (e.g. a brief USB
+        # hiccup), a plain read() keeps returning the OLDEST queued frame
+        # first, so latency creeps up over time even though the read-rate
+        # (capture_fps) looks perfectly normal. Draining any extra queued
+        # frames each iteration keeps us on the newest one instead.
+        ok = cap.grab()
+        # Bounded, not unbounded: grab() blocks waiting for the next frame
+        # once the queue is actually empty, and the camera keeps producing
+        # frames indefinitely - an unbounded "while cap.grab(): pass" would
+        # never exit and capture_loop would never call retrieve() again.
+        # A handful of extra grabs is enough to clear a small backlog
+        # without risking that.
+        for _ in range(3):
+            if not cap.grab():
+                break
+        if not ok:
+            time.sleep(0.01)
+            continue
+        ok, frame = cap.retrieve()
         if not ok:
             time.sleep(0.01)
             continue
