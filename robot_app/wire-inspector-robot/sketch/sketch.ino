@@ -18,27 +18,23 @@
 #define TRIG_PIN 3
 #define ECHO_PIN 2
 
-// 180 -> 130 (blur/vibration was flickering BROKEN back to INTACT) -> 50
-// (requested, but too low: motors got the PWM signal fine - RPC calls
-// succeeded, no errors - but 50/255 (~20%) is below this motor+chassis's
-// stall threshold, so they hummed without actually turning. 90 is a
-// starting point between "confirmed too low" and "confirmed working" (130)
-// - retune from here by feel.
-const int SPEED = 90;
+// 180 -> 130 -> 50 (too low, motors hummed without turning - below stall
+// threshold) -> 90 (needed a kick-start pulse to get moving from a dead
+// stop, and the pulse felt too jerky) -> 100, no kick pulse: simplest thing
+// that might clear the stall threshold on its own. If it's still stuck
+// from a stop, the stall issue is back and the kick-start approach (see
+// git history) is the fix to bring back, just gentler (lower KICK_SPEED
+// and/or shorter KICK_MS instead of removing it).
+const int SPEED = 100;
 
 // The car drifted right when driving straight at equal PWM on both sides -
 // pivot_right() (motor A alone) turns the car right, so A is the left
-// wheel; trimming it down brings the two sides back into balance. If it
-// now drifts left instead, flip this to trim PWMB down by the same amount
-// instead; retune the magnitude by feel.
-const int TRIM_A = 8;
-
-// SPEED holds a steady roll fine but isn't enough to break static friction
-// from a dead stop - without this the car needed a manual push after every
-// stop-for-inspection/avoidance. A brief full-power kick gets it moving,
-// then it settles to the normal cruising SPEED.
-const int KICK_SPEED = 255;
-const int KICK_MS = 150;
+// wheel; trimming it down brings the two sides back into balance. Still
+// drifting right at TRIM_A=8, same direction as before - direction was
+// right, magnitude wasn't enough, so raised it. If it now drifts left
+// instead, the magnitude overshot; back it off. If it drifts right at all
+// keep raising it.
+const int TRIM_A = 15;
 
 // Motion modes, set from Python via Bridge.call("set_motion", mode)
 enum Motion {
@@ -58,11 +54,6 @@ void drive_forward() {
   digitalWrite(AIN2, LOW);
   digitalWrite(BIN1, HIGH);
   digitalWrite(BIN2, LOW);
-
-  analogWrite(PWMA, KICK_SPEED - TRIM_A);
-  analogWrite(PWMB, KICK_SPEED);
-  delay(KICK_MS);
-
   analogWrite(PWMA, SPEED - TRIM_A);
   analogWrite(PWMB, SPEED);
 }
