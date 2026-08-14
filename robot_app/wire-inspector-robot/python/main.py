@@ -70,20 +70,27 @@ MOTION_FORWARD = 1
 MOTION_PIVOT_RIGHT = 2
 MOTION_PIVOT_LEFT = 3
 
-BROKEN_CONF_THRESHOLD = 0.92  # min confidence to count a frame as "broken"
-# Raised from 0.80: the model was never trained on "no wire in frame at
-# all" (e.g. camera pointed at bare floor/carpet after a pivot) since every
-# training image had a wire in it - it has no way to say "unsure", so
-# unfamiliar backgrounds sometimes get classified BROKEN with real
-# confidence. A higher bar filters out more of that without needing a
-# retrain; it won't catch every false positive (some scored 85-86%), but
-# genuine broken-wire detections tend to score much higher than that.
+BROKEN_CONF_THRESHOLD = 0.85  # min confidence to count a frame as "broken"
+# Raised from 0.80 (not all the way to 0.92 that was tried briefly): the
+# model was never trained on "no wire in frame at all" (e.g. camera pointed
+# at bare floor/carpet after a pivot), so unfamiliar backgrounds sometimes
+# get classified BROKEN with real confidence. But training photos were all
+# shot close to the wire, so confidence on a genuine broken wire also only
+# gets high once the car is already close to it - too high a threshold
+# combined with the old wider vote window meant it could still be closing
+# in by the time enough high-confidence frames accumulated to react. 0.85
+# is a partial filter, not a full fix (see BROKEN_WINDOW below for the
+# other half); the real fix is retraining with wire-at-a-distance photos.
+#
 # A strict "N consecutive" streak was too fragile at driving speed: motion
 # blur/vibration would flip a single frame back to INTACT, resetting the
 # streak to 0 and letting a genuinely broken wire sail past unconfirmed.
-# A sliding-window majority tolerates that kind of one-off flicker.
-BROKEN_WINDOW_SIZE = 5        # look at the last N frames
-BROKEN_WINDOW_REQUIRED = 3    # ...and trigger once at least this many were "broken"
+# A sliding-window majority tolerates that kind of one-off flicker - kept
+# short (3 frames, need 2) so it also reacts quickly once close enough to
+# be confident, rather than waiting through several more frames of driving
+# closer.
+BROKEN_WINDOW_SIZE = 3        # look at the last N frames
+BROKEN_WINDOW_REQUIRED = 2    # ...and trigger once at least this many were "broken"
 COOLDOWN_SEC = 4.0            # ignore new triggers for this long after resuming
 
 SCAN_STEP_MS = 100            # pivot burst duration per centering step
