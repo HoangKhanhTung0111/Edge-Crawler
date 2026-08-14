@@ -178,7 +178,7 @@ camera_state = {"cap": _cap0, "last_frame_at": time.time()}
 CAMERA_STALL_TIMEOUT_S = 3.0  # no new frame for this long -> assume the driver/USB hung and reopen
 
 frame_lock = threading.Lock()
-latest_frame = {"frame": None, "capture_fps": 0.0}
+latest_frame = {"frame": None, "capture_fps": 0.0, "version": 0}
 
 state_lock = threading.Lock()
 state = {"label": "...", "conf": 0.0, "color": (200, 200, 200), "ms": 0.0, "infer_fps": 0.0}
@@ -205,6 +205,7 @@ def capture_loop():
             continue
         with frame_lock:
             latest_frame["frame"] = frame
+            latest_frame["version"] += 1
         # A "successful" read() doesn't guarantee a genuinely NEW frame - if
         # the driver ever gets stuck handing back the same buffered image
         # forever, reads keep succeeding (so a read-failure-only watchdog
@@ -260,6 +261,13 @@ def get_latest_frame():
         return None if f is None else f.copy()
 
 
+def get_latest_frame_versioned():
+    with frame_lock:
+        f = latest_frame["frame"]
+        v = latest_frame["version"]
+        return (None, v) if f is None else (f.copy(), v)
+
+
 def preprocess(frame_bgr):
     img = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
     h, w = img.shape[:2]
@@ -305,11 +313,21 @@ def classify(frame_bgr):
 def inference_loop():
     n = 0
     t_win = time.time()
+    last_version = -1
     while True:
-        frame = get_latest_frame()
-        if frame is None:
+        # Was classifying in a flat-out tight loop with no gating on
+        # whether a new frame had actually arrived - reclassifying the same
+        # frame over and over, burning CPU for no benefit (measured 266%
+        # sustained CPU / load average 5+ from this one process) and
+        # starving the capture/Flask threads of scheduling time, which
+        # showed up as real-world lag even though the reported capture fps
+        # looked normal. Only classify when capture_loop has actually
+        # published a new frame.
+        frame, version = get_latest_frame_versioned()
+        if frame is None or version == last_version:
             time.sleep(0.01)
             continue
+        last_version = version
         label, conf, color, ms = classify(frame)
         n += 1
         now = time.time()
@@ -574,7 +592,16 @@ def gallery():
     log_path = LOG_DIR / "inspections.jsonl"
     if log_path.exists():
         with open(log_path) as f:
-            entries = [json.loads(line) for line in f if line.strip()]
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    # A line can end up corrupted (e.g. null-byte padding)
+                    # if the app was killed mid-write - skip it rather than
+                    # taking down the whole gallery over one bad entry.
+                    continue
     entries.reverse()  # most recent first
 
     cards = "".join(
